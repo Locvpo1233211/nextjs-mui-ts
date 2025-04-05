@@ -13,6 +13,7 @@ import { useHasMounted } from "../utils/customHook";
 const AppFooter = () => {
     const hasMounted = useHasMounted();
     if (!hasMounted) return <></>;
+    console.log("AppFooter", process.env.NEXT_PUBLIC_API_URL);
 
     return (
         <AppBar
