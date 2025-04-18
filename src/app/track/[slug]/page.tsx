@@ -2,14 +2,12 @@
 
 import WaveTrack from "@/components/track/wave.track";
 import { useSearchParams } from "next/navigation";
-
+import { Container } from "@mui/material";
 const DetailTrackPage = (props: any) => {
     return (
-        <div className="flex flex-col gap-4">
-            <h1>Detail Track Page</h1>
-            <p>This is the detail track page.</p>
+        <Container className="flex flex-col gap-4">
             <WaveTrack />
-        </div>
+        </Container>
     );
 };
 export default DetailTrackPage;
