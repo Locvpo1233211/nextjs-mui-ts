@@ -1,111 +1,50 @@
-"use client"; // Đánh dấu component chạy trên client
+"use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useMemo } from "react";
 import { useWavesurfer } from "@wavesurfer/react";
 import { useSearchParams } from "next/navigation";
 import "./wave.scss";
+import { Tooltip } from "@mui/material";
 
 const WaveTrack = () => {
     const containerRef = useRef<HTMLDivElement>(null);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
     const timeRef = useRef<HTMLDivElement>(null);
     const durationRef = useRef<HTMLDivElement>(null);
     const hoverRef = useRef<HTMLDivElement>(null);
     const searchParams = useSearchParams();
-    const audio = searchParams.get("audio") || "/default-audio.mp3"; // Giá trị mặc định nếu audio là null
+    const audio = searchParams.get("audio") || "/default-audio.mp3";
 
-    // State để lưu gradient
-    const [waveGradient, setWaveGradient] = useState<CanvasGradient | null>(
-        null
+    // Memoize cấu hình Wavesurfer
+    const wavesurferConfig = useMemo(
+        () => ({
+            container: containerRef,
+            url: `/api?audio=${audio}`,
+            waveColor: "#4A4A4A", // Tĩnh hóa màu waveform
+            progressColor: "#FF6200", // Tĩnh hóa màu progress
+            cursorColor: "#FF6200",
+            barWidth: 2,
+            barGap: 1,
+            height: 80,
+            barRadius: 1,
+        }),
+        [audio]
     );
-    const [progressGradient, setProgressGradient] =
-        useState<CanvasGradient | null>(null);
-
-    // Tạo gradient trong useEffect
-    useEffect(() => {
-        if (canvasRef.current) {
-            const canvas = canvasRef.current;
-            const ctx = canvas.getContext("2d")!;
-
-            // Định nghĩa waveform gradient
-            const gradient = ctx.createLinearGradient(
-                0,
-                0,
-                0,
-                canvas.height * 1.35
-            );
-            gradient.addColorStop(0, "#656666");
-            gradient.addColorStop(
-                (canvas.height * 0.7) / canvas.height,
-                "#656666"
-            );
-            gradient.addColorStop(
-                (canvas.height * 0.7 + 1) / canvas.height,
-                "#ffffff"
-            );
-            gradient.addColorStop(
-                (canvas.height * 0.7 + 2) / canvas.height,
-                "#ffffff"
-            );
-            gradient.addColorStop(
-                (canvas.height * 0.7 + 3) / canvas.height,
-                "#B1B1B1"
-            );
-            gradient.addColorStop(1, "#B1B1B1");
-
-            // Định nghĩa progress gradient
-            const progress = ctx.createLinearGradient(
-                0,
-                0,
-                0,
-                canvas.height * 1.35
-            );
-            progress.addColorStop(0, "#EE772F");
-            progress.addColorStop(
-                (canvas.height * 0.7) / canvas.height,
-                "#EB4926"
-            );
-            progress.addColorStop(
-                (canvas.height * 0.7 + 1) / canvas.height,
-                "#ffffff"
-            );
-            progress.addColorStop(
-                (canvas.height * 0.7 + 2) / canvas.height,
-                "#ffffff"
-            );
-            progress.addColorStop(
-                (canvas.height * 0.7 + 3) / canvas.height,
-                "#F6B094"
-            );
-            progress.addColorStop(1, "#F6B094");
-
-            setWaveGradient(gradient);
-            setProgressGradient(progress);
-        }
-    }, []);
 
     // Khởi tạo wavesurfer
-    const { wavesurfer, isReady, isPlaying, currentTime } = useWavesurfer({
-        container: containerRef,
-        url: `/api?audio=${audio}`,
-        waveColor: waveGradient || "#656666", // Giá trị dự phòng
-        progressColor: progressGradient || "#EE772F", // Giá trị dự phòng
-        cursorColor: "#EE772F",
-        barWidth: 2,
-        height: 100,
-    });
+    const { wavesurfer, isReady, isPlaying } = useWavesurfer(wavesurferConfig);
 
     // Xử lý sự kiện play/pause
     const onPlayPause = () => {
-        wavesurfer && wavesurfer.playPause();
+        if (wavesurfer) {
+            wavesurfer.playPause();
+        }
     };
 
     // Định dạng thời gian
     const formatTime = (seconds: number) => {
         const minutes = Math.floor(seconds / 60);
         const secondsRemainder = Math.round(seconds) % 60;
-        const paddedSeconds = `0${secondsRemainder}`.slice(-2);
-        return `${minutes}:${paddedSeconds}`;
+        return `${minutes}:${secondsRemainder.toString().padStart(2, "0")}`;
     };
 
     // Xử lý sự kiện wavesurfer và hover
@@ -114,58 +53,204 @@ const WaveTrack = () => {
             !wavesurfer ||
             !containerRef.current ||
             !timeRef.current ||
-            !durationRef.current ||
-            !hoverRef.current
+            !durationRef.current
         )
             return;
 
-        // Xử lý hover effect
+        // Debounce pointermove
+        let timeout: NodeJS.Timeout;
         const handlePointerMove = (e: PointerEvent) => {
-            if (hoverRef.current) {
-                hoverRef.current.style.width = `${e.offsetX}px`;
-            }
+            clearTimeout(timeout);
+            timeout = setTimeout(() => {
+                if (hoverRef.current) {
+                    hoverRef.current.style.width = `${e.offsetX}px`;
+                }
+            }, 16); // ~60fps
         };
 
         containerRef.current.addEventListener("pointermove", handlePointerMove);
 
         // Cập nhật thời gian và duration
-        wavesurfer.on("decode", (duration) => {
+        const onDecode = (duration: number) => {
             if (durationRef.current) {
                 durationRef.current.textContent = formatTime(duration);
             }
-        });
-        wavesurfer.on("timeupdate", (currentTime) => {
+        };
+        const onTimeUpdate = (currentTime: number) => {
             if (timeRef.current) {
                 timeRef.current.textContent = formatTime(currentTime);
             }
-        });
+        };
 
-        // Cleanup sự kiện khi component unmount
+        wavesurfer.on("decode", onDecode);
+        wavesurfer.on("timeupdate", onTimeUpdate);
+
+        // Cleanup
         return () => {
             containerRef.current?.removeEventListener(
                 "pointermove",
                 handlePointerMove
             );
+            wavesurfer.un("decode", onDecode);
+            wavesurfer.un("timeupdate", onTimeUpdate);
+            clearTimeout(timeout);
         };
     }, [wavesurfer]);
+    const arrComments = [
+        {
+            id: 1,
+            avatar: "http://localhost:8000/images/chill1.png",
+            moment: 10,
+            user: "username 1",
+            content: "just a comment1",
+        },
+        {
+            id: 2,
+            avatar: "http://localhost:8000/images/chill1.png",
+            moment: 30,
+            user: "username 2",
+            content: "just a comment3",
+        },
+        {
+            id: 3,
+            avatar: "http://localhost:8000/images/chill1.png",
+            moment: 50,
+            user: "username 3",
+            content: "just a comment3",
+        },
+    ];
 
+    const calLeft = (moment: number) => {
+        const hardCodeDuration = 199;
+        const percent = (moment / hardCodeDuration) * 100;
+        return `${percent}%`;
+    };
     return (
-        <>
-            <div ref={containerRef} id="waveform">
-                <div ref={timeRef} id="time">
-                    0:00
+        <div className="wave-container" style={{ marginTop: 20 }}>
+            <div
+                style={{
+                    display: "flex",
+                    gap: 15,
+                    padding: 20,
+                    height: 400,
+                    background:
+                        "linear-gradient(135deg, rgb(106, 112, 67) 0%, rgb(11, 15, 20) 100%)",
+                }}
+            >
+                <div
+                    className="left"
+                    style={{
+                        width: "75%",
+                        height: "calc(100% - 10px)",
+                        display: "flex",
+                        flexDirection: "column",
+                        justifyContent: "space-between",
+                    }}
+                >
+                    <div className="info" style={{ display: "flex" }}>
+                        <div>
+                            <button
+                                onClick={onPlayPause}
+                                className="play-pause-button"
+                                style={{
+                                    borderRadius: "50%",
+                                    background: "#f50",
+                                    height: "50px",
+                                    width: "50px",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    cursor: "pointer",
+                                }}
+                            >
+                                {isPlaying ? "Pause" : "Play"}
+                            </button>
+                        </div>
+                        <div style={{ marginLeft: 20 }}>
+                            <div
+                                style={{
+                                    padding: "0 5px",
+                                    background: "#333",
+                                    fontSize: 30,
+                                    width: "fit-content",
+                                    color: "white",
+                                }}
+                            >
+                                Hỏi Dân IT's song
+                            </div>
+                            <div
+                                style={{
+                                    padding: "0 5px",
+                                    marginTop: 10,
+                                    background: "#333",
+                                    fontSize: 20,
+                                    width: "fit-content",
+                                    color: "white",
+                                }}
+                            >
+                                Eric
+                            </div>
+                        </div>
+                    </div>
+                    <div ref={containerRef} id="waveform">
+                        <div ref={timeRef} id="time">
+                            0:00
+                        </div>
+                        <div ref={durationRef} id="duration">
+                            0:00
+                        </div>
+                        <div ref={hoverRef} id="hover"></div>
+                        <div
+                            className="comments"
+                            style={{ position: "relative" }}
+                        >
+                            {arrComments.map((item) => {
+                                return (
+                                    <Tooltip title={item.content} arrow>
+                                        <img
+                                            onPointerMove={(e) => {
+                                                const hover = hoverRef.current!;
+                                                hover.style.width = calLeft(
+                                                    item.moment
+                                                );
+                                            }}
+                                            key={item.id}
+                                            style={{
+                                                height: 20,
+                                                width: 20,
+                                                position: "absolute",
+                                                top: 71,
+                                                zIndex: 20,
+                                                left: calLeft(item.moment),
+                                            }}
+                                            src={`http://localhost:8000/images/chill1.png`}
+                                        />
+                                    </Tooltip>
+                                );
+                            })}
+                        </div>
+                    </div>
                 </div>
-                <div ref={durationRef} id="duration">
-                    0:00
+
+                <div
+                    className="right"
+                    style={{
+                        width: "25%",
+                        padding: 15,
+                        display: "flex",
+                        alignItems: "center",
+                    }}
+                >
+                    <div
+                        style={{
+                            background: "#ccc",
+                            width: 250,
+                            height: 250,
+                        }}
+                    ></div>
                 </div>
-                <div ref={hoverRef} id="hover"></div>
             </div>
-            <canvas ref={canvasRef} style={{ display: "none" }} />{" "}
-            {/* Canvas ẩn để tạo gradient */}
-            <button onClick={onPlayPause}>
-                {isPlaying ? "Pause" : "Play"}
-            </button>
-        </>
+        </div>
     );
 };
 
